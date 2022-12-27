@@ -31,8 +31,4 @@ export class PixabayApiService {
   resetPage() {
     this.page = 1;
   }
-
-  numberOfResponses() {
-    return this.perPage;
-  }
 }

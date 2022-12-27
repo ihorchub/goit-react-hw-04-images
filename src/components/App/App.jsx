@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { useState, useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { repeatRequest, emptyRequest } from 'services/toasts';
 import { scrollToTop, scrollHandler } from 'services/Scroll';
@@ -12,156 +12,128 @@ import { LoadMore } from 'components/LoadMore/LoadMore';
 import { Modal } from 'components/Modal/Modal';
 
 const fetchPixabay = new PixabayApiService();
-const fullAnswer = fetchPixabay.numberOfResponses();
 
-export class App extends Component {
-  state = {
-    page: 1,
-    searchQuery: '',
-    images: [],
-    total: null,
-    status: 'idle',
-    error: null,
-    buttonLoader: false,
-    showModal: false,
-    selectedImage: null,
-  };
+export const App = () => {
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [images, setImages] = useState([]);
+  const [total, setTotal] = useState(null);
+  const [status, setStatus] = useState('idle');
+  const [error, setError] = useState(null);
+  const [buttonLoader, setButtonLoader] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
-  componentDidMount() {
-    const savedPictures = sessionStorage.getItem('pictures');
+  useEffect(() => {
+    const savedQuery = sessionStorage.getItem('pictures');
+    savedQuery !== null && setSearchQuery(savedQuery);
+  }, []);
 
-    if (savedPictures !== null) {
-      const startingQuery = JSON.parse(savedPictures);
-      this.setState({ ...startingQuery });
-    }
-  }
-
-  async componentDidUpdate(_, prevState) {
-    const newQuery = this.state.searchQuery;
-    const nextPage = this.state.page;
-
-    if (prevState.searchQuery !== newQuery) {
-      scrollToTop();
-      this.setState({ status: 'pending' });
-      try {
-        const data = await fetchPixabay.axiosImages(newQuery);        
-        if (data.totalHits > 0) {          
-          this.setState(() => ({
-            images: [...data.hits],
-            status: 'resolved',
-            total: data.totalHits,
-          }));
-        } else {
-          this.setState(() => ({
-            status: 'rejected',
-            error: `Nothing was found for your request "${newQuery}"`,
-          }));
-        }
-      } catch (error) {
-        this.setState({
-          status: 'rejected',
-          error: 'Something went wrong. Please reload the page',
-        });
-        console.log(error);
-      }
+  useEffect(() => {
+    if (searchQuery === '') {
       return;
     }
 
-    if (prevState.page !== nextPage) {
+    scrollToTop();
+    setStatus('pending');
+    async function getImages() {
       try {
-        const data = await fetchPixabay.axiosImages(newQuery);
-        const nextImage = [...prevState.images, ...data.hits];
-        this.setState(() => ({
-          images: nextImage,
-          status: 'resolved',
-          buttonLoader: false,
-        }));
-        scrollHandler();
-      } catch (error) {
-        this.setState({
-          buttonLoader: false,
-          status: 'rejected',
-          error: 'Something went wrong. Please reload the page',
-        });
-        console.log(error);
+        const data = await fetchPixabay.axiosImages(searchQuery);
+        if (data.totalHits > 0) {
+          setImages(data.hits);
+          setStatus('resolved');
+          setTotal(data.totalHits);
+        } else {
+          setStatus('rejected');
+          setError(`Nothing was found for your request "${searchQuery}"`);
+        }
+      } catch {
+        setStatus('rejected');
+        setError(`Something went wrong. Please reload the page`);
       }
     }
-  }
+    getImages();
+  }, [searchQuery]);
 
-  clickLoadMore = () => {
-    this.setState(({ page }) => ({ buttonLoader: true, page: page + 1 }));
+  useEffect(() => {
+    if (page === 1) {
+      return;
+    }
+
+    async function getImages() {
+      try {
+        const data = await fetchPixabay.axiosImages(searchQuery);
+        setImages(prevState => [...prevState, ...data.hits]);
+        setStatus('resolved');
+        setButtonLoader(false);
+        scrollHandler();
+      } catch {
+        setButtonLoader(false);
+        setStatus('rejected');
+        setError(`Something went wrong. Please reload the page`);
+      }
+    }
+    getImages();
+  }, [page, searchQuery]);
+
+  const clickLoadMore = () => {
+    setButtonLoader(true);
+    setPage(prevState => prevState + 1);
   };
 
-  formSubmit = query => {
+  const formSubmit = query => {
     if (query.searchQuery.trim() === '') {
       emptyRequest();
       return;
     }
 
-    if (query.searchQuery.trim() === this.state.searchQuery.trim()) {
+    if (query.searchQuery.trim() === searchQuery.trim()) {
       repeatRequest();
       return;
     }
 
-    sessionStorage.setItem('pictures', JSON.stringify(query));
+    sessionStorage.setItem('pictures', query.searchQuery);
+
     fetchPixabay.resetPage();
-    this.setState({
-      page: 1,
-      ...query,
-      images: [],
-      total: null,
-      error: null,
-      buttonLoader: false,
-    });
+
+    setPage(1);
+    setSearchQuery(query.searchQuery);
+    setImages([]);
+    setTotal(null);
+    setError(null);
+    setButtonLoader(false);
   };
 
-  toggleModal = () => {
-    this.setState(({ showModal }) => ({ showModal: !showModal }));
+  const handleBigImage = link => {
+    setSelectedImage(link);
+    setShowModal(true);
   };
 
-  handlerBigImage = link => {
-    this.setState({ selectedImage: link, showModal: true });
-  };
-
-  render() {
-    const {
-      status,
-      error,
-      total,
-      page,
-      searchQuery,
-      images,
-      buttonLoader,
-      showModal,
-      selectedImage,
-    } = this.state;
-
-    return (
-      <>
-        <Wrapper>
-          <Searchbar onSubmit={this.formSubmit} />
-          {status === 'idle' && <Title>Make a request to display images</Title>}
-          {status === 'pending' && <Load>{LoaderGallery}</Load>}
-          {status === 'rejected' && (
-            <Title style={{ color: 'red' }}>{error}</Title>
-          )}
-          {status === 'resolved' && (
-            <>
-              <Title>The result of your request "{searchQuery}"</Title>
-              <ImageGallery images={images} onSelect={this.handlerBigImage} />
-              {total / fullAnswer > page && (
-                <LoadMore
-                  onClick={this.clickLoadMore}
-                  children={buttonLoader ? LoaderMore : 'Load more'}
-                />
-              )}
-            </>
-          )}
-          <GlobalStyle />
-          <Toaster />
-        </Wrapper>
-        {showModal && <Modal onClose={this.toggleModal} url={selectedImage} />}
-      </>
-    );
-  }
-}
+  return (
+    <>
+      <Wrapper>
+        <Searchbar onSubmit={formSubmit} />
+        {status === 'idle' && <Title>Make a request to display images</Title>}
+        {status === 'pending' && <Load>{LoaderGallery}</Load>}
+        {status === 'rejected' && (
+          <Title style={{ color: 'red' }}>{error}</Title>
+        )}
+        {status === 'resolved' && (
+          <>
+            <Title>The result of your request "{searchQuery}"</Title>
+            <ImageGallery images={images} onSelect={handleBigImage} />
+            {images.length < total && (
+              <LoadMore
+                onClick={clickLoadMore}
+                children={buttonLoader ? LoaderMore : 'Load more'}
+              />
+            )}
+          </>
+        )}
+        <GlobalStyle />
+        <Toaster />
+      </Wrapper>
+      {showModal && <Modal onClose={setShowModal(false)} url={selectedImage} />}
+    </>
+  );
+};
