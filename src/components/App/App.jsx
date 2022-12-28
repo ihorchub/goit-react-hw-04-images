@@ -133,7 +133,9 @@ export const App = () => {
         <GlobalStyle />
         <Toaster />
       </Wrapper>
-      {showModal && <Modal onClose={setShowModal(false)} url={selectedImage} />}
+      {showModal && (
+        <Modal onClose={() => setShowModal(false)} url={selectedImage} />
+      )}
     </>
   );
 };
